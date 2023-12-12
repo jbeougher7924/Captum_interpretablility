@@ -26,11 +26,7 @@ import torch.nn.functional as F
 
 model = torchvision.models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1).eval()
 
-
-# response = requests.get("https://image.freepik.com/free-photo/two-beautiful-puppies-cat-dog_58409-6024.jpg")
-# img = Image.open(BytesIO(response.content))
-
-img = Image.open("data/both.png")
+img = Image.open("data/both.png") # photo of a tabby cat and bulldog
 
 center_crop = transforms.Compose([
  transforms.Resize(256),
@@ -46,16 +42,28 @@ normalize = transforms.Compose([
 ])
 input_img = normalize(center_crop(img)).unsqueeze(0)
 
+# %% [markdown]
+# Model Prediction (Optional):
+# 
+#     Performs predictions using the pre-trained model on the input image.
+#     Displays the top five predictions with their confidence scores (if enabled).
+# <div class="alert alert-block alert-info">
+# The code uses a ResNet18 model, trained on ImageNet, to identify objects in an input image. It processes the image, feeds it to the model, and gets the output probabilities. <br> Then, it finds the top 5 predictions, retrieving their labels and optionally displaying the confidence level for each. This shows the model's ability to identify objects and rank its predictions.
+# </div>
+
 # %%
-Do_Pridictions = True
-if Do_Pridictions:
+Do_Predictions = True  # Set this to True to enable predictions
+
+if Do_Predictions:
     # Get model prediction
     with torch.no_grad():
         outputs = model(input_img)
-        # Get ImageNet labels
+
+    # Get ImageNet labels
     LABELS_URL = 'https://raw.githubusercontent.com/anishathalye/imagenet-simple-labels/master/imagenet-simple-labels.json'
     labels = requests.get(LABELS_URL).json()
 
+    # Calculate probabilities
     probabilities = F.softmax(outputs, dim=1)
     top5_probabilities, top5_classes = torch.topk(probabilities, 5)
 
@@ -66,6 +74,9 @@ if Do_Pridictions:
         confidence = top5_probabilities[0][i].item() * 100
         predicted_label = labels[label_index]
         print(f"{i + 1}. {predicted_label}: {confidence:.2f}%")
+    top1k_probabilities, top1k_classes = torch.topk(probabilities, 1000)
+
+
 
 
 # %% [markdown]
@@ -84,7 +95,7 @@ from captum.attr import Occlusion
 
 attribution_dog = {}
 attribution_cat = {}
-
+target_dict = {"Boxer": 242, "Labrador": 208,"French Bulldog": 245, "Persian": 283,"Tabby": 281, "Hammerhead": 4}
 def get_target_occlusion(target, input_img):
 
     occlusion = Occlusion(model)
@@ -99,11 +110,11 @@ def get_target_occlusion(target, input_img):
                                        sliding_window_shapes=sliding_window_shapes,
                                        baselines=baselines)
 
+target=242,                       # Boxer index in ImageNet
+attribution_dog["Boxer"] = get_target_occlusion(target, input_img)
+
 target=208,                       # Labrador index in ImageNet
 attribution_dog["Labrador"] = get_target_occlusion(target, input_img)
-
-target=254,                       # Pug index in ImageNet
-attribution_dog["Pug"] = get_target_occlusion(target, input_img)
 
 target=245,                       # French Bulldog index in ImageNet
 attribution_dog["French Bulldog"] = get_target_occlusion(target, input_img)
@@ -124,13 +135,22 @@ attribution_cat["Hammerhead"] = get_target_occlusion(target, input_img)
 #     Saves the visualizations as PNG images in the "data" folder.
 #     
 # <div class="alert alert-block alert-info">
-# The code iterates through various target classes within ImageNet (Labrador, Pug, French Bulldog for dogs, Persian, Tabby, Hammerhead for cats) and generates attributions.<br> 
+# The code iterates through various target classes within ImageNet (Boxer, Labrador, French Bulldog for dogs, Persian, Tabby, Hammerhead for cats) and generates attributions.<br> 
 # These represent the significance of different image regions for each target class and the attributions are visualized as heat maps overlaid on the original image using Captum's visualization functions.
 # </div>
 
 # %%
 import numpy as np
 from captum.attr import visualization as viz
+
+
+def confidence_score_of_image(target_index):        
+    for i in range(len(labels)):
+        label_index = top1k_classes[0][i].item()        
+        if label_index == target_index:
+            confidence = top1k_probabilities[0][i].item() * 100
+            return confidence
+
 
 def show_attributions(value_attribution, label):
 
@@ -146,9 +166,10 @@ def show_attributions(value_attribution, label):
                                         np.array(center_crop(img)),
                                         vis_types,
                                         vis_signs,
-                                        [f"attribution for {label}", f"Overlay", "image"],
+                                        [f"Attribution for {label}", f"Confidence {confidence_score_of_image(target_dict[label]):.2f}%", "Image"],
                                         show_colorbar = True,
-                                        use_pyplot=True                                        
+                                        use_pyplot=True,
+                                        fig_size=(16,16)                                        
                                      )
     vis_plt[0].savefig(f"data/{label}.png")
 
